@@ -119,6 +119,8 @@ class Answer:
         self.ipaddr = ipaddr
         self.qname = caller.config.qname
         self.qtype = caller.config.qtype
+        self.query_start_time = None
+        self.rtt = 0                          # in milliseconds
         self.rcode = None
         self.answers = SortedList()
         self.nsid = None
@@ -146,16 +148,26 @@ class Answer:
         answer_dict['ip'] = self.ipaddr
         if self.nsid:
             answer_dict['nsid'] = self.nsid
+        answer_dict['rtt'] = self.rtt
         answer_dict['rcode'] = dns.rcode.to_text(self.rcode)
         answer_dict['answers'] = ",".join(self.answers)
         if self.info:
             answer_dict['info'] = ";".join(self.info)
         return answer_dict
 
+    def set_query_start_time(self):
+        """Set or reset query start time"""
+        self.query_start_time = time.time()
+
+    def compute_rtt(self):
+        """Compute response time for query in milliseconds"""
+        self.rtt = round(1000.0 * (time.time() - self.query_start_time), 3)
+
     def send_query_tcp(self, msg, timeout=TIMEOUT):
         """send DNS query over TCP to given IP address"""
 
         res = None
+        self.set_query_start_time()
         try:
             res = dns.query.tcp(msg, self.ipaddr, timeout=timeout)
         except dns.exception.Timeout:
@@ -163,6 +175,7 @@ class Answer:
             if not self.caller.config.json:
                 print(info)
             self.info.append(info)
+        self.compute_rtt()
         return res
 
     def send_query_udp(self, msg, timeout=TIMEOUT, retries=RETRIES):
@@ -186,6 +199,7 @@ class Answer:
         """Send DNS query"""
 
         msg = self.make_query_message()
+        self.set_query_start_time()
         res = self.send_query_udp(msg, timeout=TIMEOUT, retries=RETRIES)
         if res and (res.flags & dns.flags.TC):
             info = "WARN: response was truncated; retrying with TCP"
@@ -193,6 +207,7 @@ class Answer:
                 print(info)
             self.info.append(info)
             return self.send_query_tcp(msg, timeout=TIMEOUT)
+        self.compute_rtt()
         return res
 
     def make_query_message(self):
@@ -214,6 +229,7 @@ class AllAnswers:
     def __init__(self, config):
         self.config = config
         self.answer_list = []                  # list of Answer objects
+        self.info = []
         self.result = self.init_result()
         self.nslist = self.get_nslist()
         self.get_all_answers()
@@ -227,6 +243,7 @@ class AllAnswers:
             "qname": self.config.qname,
             "qtype": self.config.qtype
         }
+        result['nslist'] = []
         result['answer'] = []
         return result
 
@@ -234,6 +251,8 @@ class AllAnswers:
         """Return result dictionary"""
         for answer in self.answer_list:
             self.result['answer'].append(answer.get_result())
+        if self.info:
+            self.result['info'] = self.info
         return self.result
 
     def get_all_answers(self):
@@ -247,12 +266,21 @@ class AllAnswers:
         """Get NS name list for given zone"""
 
         nslist = SortedList()
-        msg = dns.resolver.resolve(self.config.zone, dns.rdatatype.NS).response
+        try:
+            msg = dns.resolver.resolve(self.config.zone, dns.rdatatype.NS).response
+        except dns.exception.DNSException as excinfo:
+            errmsg = f"Couldn't query NS list for {self.config.zone}: {excinfo}"
+            self.info.append(errmsg)
+            if not self.config.json:
+                print(errmsg)
+            return nslist
         for rrset in msg.answer:
             if rrset.rdtype != dns.rdatatype.NS:
                 continue
             for rdata in rrset:
                 nslist.add(rdata.target)
+        for nsname in nslist:
+            self.result['nslist'].append(nsname.to_text())
         return nslist
 
     def get_iplist(self, nsname):
@@ -260,8 +288,15 @@ class AllAnswers:
 
         iplist = []
         for rrtype in self.config.ip_rrtypes:
-            msg = dns.resolver.resolve(nsname, rrtype,
-                                       raise_on_no_answer=False).response
+            try:
+                msg = dns.resolver.resolve(nsname, rrtype,
+                                            raise_on_no_answer=False).response
+            except dns.exception.DNSException as excinfo:
+                errmsg = f"Couldn't resolve NS address for {nsname} {rrtype}: {excinfo}"
+                self.info.append(errmsg)
+                if not self.config.json:
+                    print(errmsg)
+                continue
             for rrset in msg.answer:
                 if rrset.rdtype != rrtype:
                     continue
