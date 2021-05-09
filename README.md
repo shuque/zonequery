@@ -20,10 +20,11 @@ Author: Shumon Huque
 
 ```
 $ query_all_auths.py -h
-usage: query_all_auths.py [-h] [-v] [-4 | -6] [--bufsize N | --noedns] [-j]
+usage: query_all_auths.py [-h] [-v] [-4 | -6] [--bufsize N] [--noedns] [-j]
+                          [--timeout N] [--retries N] [--tcp]
                           zone qname qtype
 
-Version 0.1.0
+Version 0.1.1
 Query all nameserver addresses for a given zone, qname, and qtype.
 
 positional arguments:
@@ -39,6 +40,9 @@ optional arguments:
   --bufsize N    Set EDNS buffer size in octets (default: 1420)
   --noedns       Don't use EDNS
   -j             Emit JSON output (default is text)
+  --timeout N    Query timeout in secs (default: 3)
+  --retries N    Number of UDP retries (default: 2)
+  --tcp          Use TCP only (default: UDP with TCP fallback)
 ```
 
 ## Example output

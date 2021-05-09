@@ -17,17 +17,14 @@ import dns.rcode
 from sortedcontainers import SortedList
 
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 __description__ = f"""\
 Version {__version__}
 Query all nameserver addresses for a given zone, qname, and qtype."""
 
-TIMEOUT = 3
-RETRIES = 2
-
-DEFAULT_EDNS = True
+DEFAULT_TIMEOUT = 3
+DEFAULT_RETRIES = 2
 DEFAULT_EDNS_BUFSIZE = 1420
-DEFAULT_JSON = False
 DEFAULT_IP_RRTYPES = [dns.rdatatype.AAAA, dns.rdatatype.A]
 
 
@@ -45,6 +42,9 @@ class Config:
         'ip_rrtypes',
         'bufsize',
         'json',
+        'timeout',
+        'retries',
+        'tcponly',
     ]
 
     def __init__(self):
@@ -82,6 +82,14 @@ def process_arguments(arguments=None):
                       help="Don't use EDNS")
     parser.add_argument("-j", dest='json', action='store_true',
                         help="Emit JSON output (default is text)")
+    edns.add_argument("--timeout", type=int, metavar='N',
+                      default=DEFAULT_TIMEOUT,
+                      help="Query timeout in secs (default: %(default)d)")
+    edns.add_argument("--retries", type=int, metavar='N',
+                      default=DEFAULT_RETRIES,
+                      help="Number of UDP retries (default: %(default)d)")
+    parser.add_argument("--tcp", dest='tcponly', action='store_true',
+                        help="Use TCP only (default: UDP with TCP fallback)")
 
     config = Config()
     if arguments is not None:
@@ -105,11 +113,15 @@ class Answer:
         self.answers = SortedList()
         self.nsid = None
         self.info = []
+        self.error = []
         self.get_answer()
 
     def get_answer(self):
         """Obtain answer to DNS query"""
         msg = self.send_query()
+        if msg is None:
+            self.error.append("Failed to get response")
+            return
 
         if self.caller.config.bufsize != 0:
             for option in msg.options:
@@ -126,13 +138,16 @@ class Answer:
         answer_dict = {}
         answer_dict['name'] = self.nsname.to_text()
         answer_dict['ip'] = self.ipaddr
+        if self.info:
+            answer_dict['info'] = ";".join(self.info)
+        if self.error:
+            answer_dict['error'] = ";".join(self.error)
+            return answer_dict
         if self.nsid:
             answer_dict['nsid'] = self.nsid
         answer_dict['rtt'] = self.rtt
         answer_dict['rcode'] = dns.rcode.to_text(self.rcode)
         answer_dict['answers'] = ",".join(self.answers)
-        if self.info:
-            answer_dict['info'] = ";".join(self.info)
         return answer_dict
 
     def set_query_start_time(self):
@@ -143,10 +158,11 @@ class Answer:
         """Compute response time for query in milliseconds"""
         self.rtt = round(1000.0 * (time.time() - self.query_start_time), 3)
 
-    def send_query_tcp(self, msg, timeout=TIMEOUT):
+    def send_query_tcp(self, msg):
         """send DNS query over TCP to given IP address"""
 
         res = None
+        timeout = self.caller.config.timeout
         self.set_query_start_time()
         try:
             res = dns.query.tcp(msg, self.ipaddr, timeout=timeout)
@@ -158,11 +174,13 @@ class Answer:
         self.compute_rtt()
         return res
 
-    def send_query_udp(self, msg, timeout=TIMEOUT, retries=RETRIES):
+    def send_query_udp(self, msg):
         """send DNS query over UDP to given IP address"""
 
         gotresponse = False
         res = None
+        timeout = self.caller.config.timeout
+        retries = self.caller.config.retries
         while (not gotresponse) and (retries > 0):
             retries -= 1
             try:
@@ -179,14 +197,16 @@ class Answer:
         """Send DNS query"""
 
         msg = self.make_query_message()
+        if self.caller.config.tcponly:
+            return self.send_query_tcp(msg)
         self.set_query_start_time()
-        res = self.send_query_udp(msg, timeout=TIMEOUT, retries=RETRIES)
+        res = self.send_query_udp(msg)
         if res and (res.flags & dns.flags.TC):
             info = "WARN: response was truncated; retrying with TCP"
             if not self.caller.config.json:
                 print(info)
             self.info.append(info)
-            return self.send_query_tcp(msg, timeout=TIMEOUT)
+            return self.send_query_tcp(msg)
         self.compute_rtt()
         return res
 
