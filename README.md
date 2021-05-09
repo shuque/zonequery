@@ -20,15 +20,25 @@ Author: Shumon Huque
 
 ```
 $ query_all_auths.py -h
-query_all_authservers.py version 0.0.1
-Usage: query_all_authservers.py [Options] <zone> <qname> <qtype>
+usage: query_all_auths.py [-h] [-v] [-4 | -6] [--bufsize N | --noedns] [-j]
+                          zone qname qtype
 
-       Options:
-       -h          Print this help string
-       -4          Use IPv4 transport only
-       -6          Use IPv6 transport only
-       -e          Disable EDNS (and NSID)
-       -j          Output JSON (default is text output)
+Version 0.1.0
+Query all nameserver addresses for a given zone, qname, and qtype.
+
+positional arguments:
+  zone           DNS zone name
+  qname          Query name
+  qtype          Query type
+
+optional arguments:
+  -h, --help     show this help message and exit
+  -v, --verbose  increase output verbosity
+  -4             Use IPv4 transport only
+  -6             Use IPv6 transport only
+  --bufsize N    Set EDNS buffer size in octets (default: 1420)
+  --noedns       Don't use EDNS
+  -j             Emit JSON output (default is text)
 ```
 
 ## Example output
