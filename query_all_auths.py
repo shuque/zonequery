@@ -17,7 +17,7 @@ import dns.rcode
 from sortedcontainers import SortedList
 
 
-__version__ = "0.1.1"
+__version__ = "0.2.0"
 __description__ = f"""\
 Version {__version__}
 Query all nameserver addresses for a given zone, qname, and qtype."""
@@ -45,10 +45,22 @@ class Config:
         'timeout',
         'retries',
         'tcponly',
+        'section'
     ]
 
     def __init__(self):
         self.ip_rrtypes = DEFAULT_IP_RRTYPES
+        self.section = None
+
+    def __repr__(self):
+        attributes = []
+        for key in self.__slots__:
+            try:
+                value = self.__getattribute__(key)
+            except AttributeError:
+                continue
+            attributes.append(f"{key}: {value}")
+        return "Config({})".format(', '.join(attributes))
 
 
 def process_arguments(arguments=None):
@@ -90,6 +102,10 @@ def process_arguments(arguments=None):
                       help="Number of UDP retries (default: %(default)d)")
     parser.add_argument("--tcp", dest='tcponly', action='store_true',
                         help="Use TCP only (default: UDP with TCP fallback)")
+    parser.add_argument("--section", dest='section', metavar='name',
+                        help="Specify response section to display (default: all)",
+                        choices=['answer', 'authority', 'additional'])
+
 
     config = Config()
     if arguments is not None:
@@ -110,28 +126,67 @@ class Answer:
         self.query_start_time = None
         self.rtt = 0                          # in milliseconds
         self.rcode = None
-        self.answers = SortedList()
+        self.msg = None
+        self.short_answers = SortedList()
         self.nsid = None
         self.info = []
         self.error = []
         self.get_answer()
 
+    @staticmethod
+    def rrset_to_dict(rrset):
+        """Convert DNS rrset to dictionary"""
+        rrdict = {
+            'rrname': str(rrset.name),
+            'rrtype': dns.rdatatype.to_text(rrset.rdtype),
+            'ttl': rrset.ttl,
+            'rdata': []
+        }
+        for rdata in sorted(rrset):
+            rrdict['rdata'].append(rdata.to_text())
+        return rrdict
+
+    @staticmethod
+    def section_to_list(section):
+        """Convert DNS message section to list of rrset_dicts"""
+        section_list = []
+        for rrset in section:
+            rrdict = Answer.rrset_to_dict(rrset)
+            section_list.append(rrdict)
+        return section_list
+
     def get_answer(self):
         """Obtain answer to DNS query"""
-        msg = self.send_query()
-        if msg is None:
+        self.msg = self.send_query()
+        if self.msg is None:
             self.error.append("Failed to get response")
             return
 
         if self.caller.config.bufsize != 0:
-            for option in msg.options:
+            for option in self.msg.options:
                 if option.otype == dns.edns.NSID:
                     self.nsid = option.data.decode()
 
-        for rrset in msg.answer:
+        for rrset in self.msg.answer:
             for rdata in rrset:
-                self.answers.add(rdata.to_text())
-        self.rcode = msg.rcode()
+                self.short_answers.add(rdata.to_text())
+        self.rcode = self.msg.rcode()
+
+    def get_sections(self):
+        """Get response section information"""
+        requested = self.caller.config.section
+        response_dict = {}
+        response_dict['short_answers'] = ",".join(self.short_answers)
+        if self.msg.answer and requested in [None, 'answer']:
+            answer_list = Answer.section_to_list(self.msg.answer)
+            response_dict['answer'] = answer_list
+        if self.msg.authority and requested in [None, 'authority']:
+            authority_list = Answer.section_to_list(self.msg.authority)
+            response_dict['authority'] = authority_list
+        if self.msg.additional and requested in [None, 'additional']:
+            additional_list = Answer.section_to_list(self.msg.additional)
+            response_dict['additional'] = additional_list
+        return response_dict
 
     def get_result(self):
         """Make result dictionary"""
@@ -147,7 +202,7 @@ class Answer:
             answer_dict['nsid'] = self.nsid
         answer_dict['rtt'] = self.rtt
         answer_dict['rcode'] = dns.rcode.to_text(self.rcode)
-        answer_dict['answers'] = ",".join(self.answers)
+        answer_dict['response'] = self.get_sections()
         return answer_dict
 
     def set_query_start_time(self):
@@ -244,13 +299,13 @@ class AllAnswers:
             "qtype": self.config.qtype
         }
         result['nslist'] = []
-        result['answer'] = []
+        result['responses'] = []
         return result
 
     def get_result(self):
         """Return result dictionary"""
         for answer in self.answer_list:
-            self.result['answer'].append(answer.get_result())
+            self.result['responses'].append(answer.get_result())
         if self.info:
             self.result['info'] = self.info
         return self.result
@@ -334,9 +389,9 @@ if __name__ == '__main__':
     if CONFIG.json:
         print(json.dumps(RESULT))
     else:
-        for ADICT in RESULT['answer']:
+        for ADICT in RESULT['responses']:
             NSID = ADICT['nsid'] if 'nsid' in ADICT else ''
-            print("{} {} {} {}".format(ADICT['answers'],
+            print("{} {} {} {}".format(ADICT['response']['short_answers'],
                                        ADICT['name'],
                                        ADICT['ip'],
                                        NSID))
