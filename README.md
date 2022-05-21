@@ -26,31 +26,33 @@ Author: Shumon Huque
 
 ```
 $ query_all_auths.py -h
-
-usage: query_all_auths.py [-h] [-v] [-4 | -6] [--bufsize N] [--noedns] [-j]
-                          [--timeout N] [--retries N] [--tcp] [--section name]
+usage: query_all_auths.py [-h] [-v] [-4 | -6] [--bufsize N] [--noedns]
+                          [--dnssec] [-j] [--timeout N] [--retries N]
+                          [--notcpfallback] [--tcp] [--section name]
                           zone qname qtype
 
-Version 0.2.0
+Version 0.2.1
 Query all nameserver addresses for a given zone, qname, and qtype.
 
 positional arguments:
-  zone            DNS zone name
-  qname           Query name
-  qtype           Query type
+  zone             DNS zone name
+  qname            Query name
+  qtype            Query type
 
 optional arguments:
-  -h, --help      show this help message and exit
-  -v, --verbose   increase output verbosity
-  -4              Use IPv4 transport only
-  -6              Use IPv6 transport only
-  --bufsize N     Set EDNS buffer size in octets (default: 1420)
-  --noedns        Don't use EDNS
-  -j              Emit JSON output (default is text)
-  --timeout N     Query timeout in secs (default: 3)
-  --retries N     Number of UDP retries (default: 2)
-  --tcp           Use TCP only (default: UDP with TCP fallback)
-  --section name  Specify response section to display (default: all)
+  -h, --help       show this help message and exit
+  -v, --verbose    increase output verbosity
+  -4               Use IPv4 transport only
+  -6               Use IPv6 transport only
+  --bufsize N      Set EDNS buffer size in octets (default: 1420)
+  --noedns         Don't use EDNS
+  --dnssec         Set DNSSEC-OK bit in queries
+  -j               Emit JSON output (default is text)
+  --timeout N      Query timeout in secs (default: 3)
+  --retries N      Number of UDP retries (default: 2)
+  --notcpfallback  Do not fall back to TCP on truncation
+  --tcp            Use TCP only (default: UDP with TCP fallback)
+  --section name   Specify response section to display (default: all)
 ```
 
 ## Example output

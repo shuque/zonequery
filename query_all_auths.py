@@ -14,10 +14,11 @@ import dns.query
 import dns.rdatatype
 import dns.rdataclass
 import dns.rcode
+import dns.flags
 from sortedcontainers import SortedList
 
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 __description__ = f"""\
 Version {__version__}
 Query all nameserver addresses for a given zone, qname, and qtype."""
@@ -28,41 +29,6 @@ DEFAULT_EDNS_BUFSIZE = 1420
 DEFAULT_IP_RRTYPES = [dns.rdatatype.AAAA, dns.rdatatype.A]
 
 
-class Config:
-
-    """
-    Configuration parameters. Most of the parameters will be
-    populated by argparse.parse_args(), to which an instance of
-    this class is passed.
-    """
-
-    __slots__ = [
-        'zone', 'qname', 'qtype',
-        'verbose',
-        'ip_rrtypes',
-        'bufsize',
-        'json',
-        'timeout',
-        'retries',
-        'tcponly',
-        'section'
-    ]
-
-    def __init__(self):
-        self.ip_rrtypes = DEFAULT_IP_RRTYPES
-        self.section = None
-
-    def __repr__(self):
-        attributes = []
-        for key in self.__slots__:
-            try:
-                value = self.__getattribute__(key)
-            except AttributeError:
-                continue
-            attributes.append(f"{key}: {value}")
-        return "Config({})".format(', '.join(attributes))
-
-
 def process_arguments(arguments=None):
     """Process command line arguments"""
 
@@ -70,21 +36,23 @@ def process_arguments(arguments=None):
         formatter_class=argparse.RawDescriptionHelpFormatter,
         description=__description__,
         allow_abbrev=False)
+    parser.add_argument("zone", help="DNS zone name")
+    parser.add_argument("qname", help="Query name")
+    parser.add_argument("qtype", help="Query type")
+
     parser.add_argument("-v", "--verbose", action="count", default=0,
                         help="increase output verbosity")
-    parser.add_argument("zone",
-                        help="DNS zone name")
-    parser.add_argument("qname",
-                        help="Query name")
-    parser.add_argument("qtype",
-                        help="Query type")
-    transports = parser.add_mutually_exclusive_group()
-    transports.add_argument("-4", dest='ip_rrtypes',
+
+    ip_rrtypes = parser.add_mutually_exclusive_group()
+    ip_rrtypes.add_argument("-4", dest='ip_rrtypes',
                             action='store_const', const=[dns.rdatatype.A],
+                            default=DEFAULT_IP_RRTYPES,
                             help="Use IPv4 transport only")
-    transports.add_argument("-6", dest='ip_rrtypes',
+    ip_rrtypes.add_argument("-6", dest='ip_rrtypes',
                             action='store_const', const=[dns.rdatatype.AAAA],
+                            default=DEFAULT_IP_RRTYPES,
                             help="Use IPv6 transport only")
+
     edns = parser.add_mutually_exclusive_group()
     edns.add_argument("--bufsize", type=int, metavar='N',
                       default=DEFAULT_EDNS_BUFSIZE,
@@ -92,6 +60,10 @@ def process_arguments(arguments=None):
     edns.add_argument("--noedns", dest='bufsize',
                       action='store_const', const=0,
                       help="Don't use EDNS")
+
+    parser.add_argument("--dnssec", dest='dnssec', action='store_true',
+                        help="Set DNSSEC-OK bit in queries")
+
     parser.add_argument("-j", dest='json', action='store_true',
                         help="Emit JSON output (default is text)")
     edns.add_argument("--timeout", type=int, metavar='N',
@@ -100,17 +72,17 @@ def process_arguments(arguments=None):
     edns.add_argument("--retries", type=int, metavar='N',
                       default=DEFAULT_RETRIES,
                       help="Number of UDP retries (default: %(default)d)")
+    parser.add_argument("--notcpfallback", dest='notcpfallback', action='store_true',
+                        help="Do not fall back to TCP on truncation")
     parser.add_argument("--tcp", dest='tcponly', action='store_true',
                         help="Use TCP only (default: UDP with TCP fallback)")
     parser.add_argument("--section", dest='section', metavar='name',
                         help="Specify response section to display (default: all)",
                         choices=['answer', 'authority', 'additional'])
 
-
-    config = Config()
     if arguments is not None:
-        return parser.parse_args(namespace=config, args=arguments)
-    return parser.parse_args(namespace=config)
+        return parser.parse_args(args=arguments)
+    return parser.parse_args()
 
 
 class Answer:
@@ -129,6 +101,7 @@ class Answer:
         self.msg = None
         self.short_answers = SortedList()
         self.nsid = None
+        self.tcp_fallback = False             # did TCP fallback happen?
         self.info = []
         self.error = []
         self.get_answer()
@@ -198,6 +171,8 @@ class Answer:
         if self.error:
             answer_dict['error'] = ";".join(self.error)
             return answer_dict
+        if self.tcp_fallback:
+            answer_dict['tcp_fallback'] = True
         if self.nsid:
             answer_dict['nsid'] = self.nsid
         answer_dict['rtt'] = self.rtt
@@ -236,6 +211,7 @@ class Answer:
         res = None
         timeout = self.caller.config.timeout
         retries = self.caller.config.retries
+
         while (not gotresponse) and (retries > 0):
             retries -= 1
             try:
@@ -257,11 +233,14 @@ class Answer:
         self.set_query_start_time()
         res = self.send_query_udp(msg)
         if res and (res.flags & dns.flags.TC):
-            info = "WARN: response was truncated; retrying with TCP"
+            info = "WARN: UDP response was truncated"
             if not self.caller.config.json:
                 print(info)
             self.info.append(info)
-            return self.send_query_tcp(msg)
+            if not self.caller.config.notcpfallback:
+                self.tcp_fallback = True
+                return self.send_query_tcp(msg)
+            return None
         self.compute_rtt()
         return res
 
@@ -271,8 +250,10 @@ class Answer:
         msg = dns.message.make_query(self.qname, self.qtype)
         msg.flags &= ~dns.flags.RD
         if self.caller.config.bufsize != 0:
+            flags = dns.flags.DO if self.caller.config.dnssec else 0
             msg.use_edns(edns=0,
                          payload=self.caller.config.bufsize,
+                         ednsflags=flags,
                          options=[dns.edns.GenericOption(dns.edns.NSID, b'')])
         return msg
 
@@ -375,6 +356,8 @@ def lambda_handler(event, context):
     arglist = ["-4"]               # Lambda still doesn't support IPv6, sigh.
     if "edns" not in event:
         arglist.append('--noedns')
+    if "dnssec" in event:
+        arglist.append('--dnssec')
     arglist.append(event['zone'])
     arglist.append(event['qname'])
     arglist.append(event['qtype'])
@@ -390,8 +373,15 @@ if __name__ == '__main__':
         print(json.dumps(RESULT))
     else:
         for ADICT in RESULT['responses']:
-            NSID = ADICT['nsid'] if 'nsid' in ADICT else ''
-            print("{} {} {} {}".format(ADICT['response']['short_answers'],
-                                       ADICT['name'],
-                                       ADICT['ip'],
-                                       NSID))
+            if 'error' in ADICT:
+                INFO = ADICT['info'] if 'info' in ADICT else ''
+                print("ERROR: {} {} {} {}".format(ADICT['error'],
+                                                  INFO,
+                                                  ADICT['name'],
+                                                  ADICT['ip']))
+            else:
+                NSID = ADICT['nsid'] if 'nsid' in ADICT else ''
+                print("{} {} {} {}".format(ADICT['response']['short_answers'],
+                                           ADICT['name'],
+                                           ADICT['ip'],
+                                           NSID))
