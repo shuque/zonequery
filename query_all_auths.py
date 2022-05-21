@@ -9,16 +9,21 @@ Query all nameserver addresses for a given zone, qname, and qtype.
 import argparse
 import json
 import time
+import struct
+import socket
+import select
 import dns.resolver
 import dns.query
+import dns.inet
 import dns.rdatatype
 import dns.rdataclass
 import dns.rcode
 import dns.flags
+import dns.message
 from sortedcontainers import SortedList
 
 
-__version__ = "0.2.1"
+__version__ = "0.2.2"
 __description__ = f"""\
 Version {__version__}
 Query all nameserver addresses for a given zone, qname, and qtype."""
@@ -27,6 +32,19 @@ DEFAULT_TIMEOUT = 3
 DEFAULT_RETRIES = 2
 DEFAULT_EDNS_BUFSIZE = 1420
 DEFAULT_IP_RRTYPES = [dns.rdatatype.AAAA, dns.rdatatype.A]
+
+
+class QueryError(Exception):
+    """QueryError Class"""
+
+
+def query_type(qtype):
+    """Check qtype argument value is well formed"""
+    try:
+        dns.rdatatype.from_text(qtype)
+    except Exception as catchall_except:
+        raise ValueError(f"invalid query type: {qtype}") from catchall_except
+    return qtype.upper()
 
 
 def process_arguments(arguments=None):
@@ -38,7 +56,7 @@ def process_arguments(arguments=None):
         allow_abbrev=False)
     parser.add_argument("zone", help="DNS zone name")
     parser.add_argument("qname", help="Query name")
-    parser.add_argument("qtype", help="Query type")
+    parser.add_argument("qtype", help="Query type", type=query_type)
 
     parser.add_argument("-v", "--verbose", action="count", default=0,
                         help="increase output verbosity")
@@ -87,12 +105,13 @@ def process_arguments(arguments=None):
 
 class Answer:
 
-    """DNS Answer Class"""
+    """DNS Answer Class; represents a DNS answer from a single nameserver"""
 
     def __init__(self, caller, nsname, ipaddr):
         self.caller = caller
         self.nsname = nsname
         self.ipaddr = ipaddr
+        self.family = dns.inet.af_for_address(ipaddr)
         self.qname = caller.config.qname
         self.qtype = caller.config.qtype
         self.query_start_time = None
@@ -101,6 +120,7 @@ class Answer:
         self.msg = None
         self.short_answers = SortedList()
         self.nsid = None
+        self.size = 0
         self.tcp_fallback = False             # did TCP fallback happen?
         self.info = []
         self.error = []
@@ -173,6 +193,8 @@ class Answer:
             return answer_dict
         if self.tcp_fallback:
             answer_dict['tcp_fallback'] = True
+        if self.size:
+            answer_dict['size'] = self.size
         if self.nsid:
             answer_dict['nsid'] = self.nsid
         answer_dict['rtt'] = self.rtt
@@ -189,15 +211,18 @@ class Answer:
         self.rtt = round(1000.0 * (time.time() - self.query_start_time), 3)
 
     def send_query_tcp(self, msg):
-        """send DNS query over TCP to given IP address"""
+        """send wire format DNS query over TCP"""
 
         res = None
         timeout = self.caller.config.timeout
+
         self.set_query_start_time()
         try:
-            res = dns.query.tcp(msg, self.ipaddr, timeout=timeout)
-        except dns.exception.Timeout:
-            info = f"WARN: TCP query timeout for {self.ipaddr}"
+            wire = send_request_tcp(msg, self.ipaddr, 53, self.family, timeout)
+            self.size = len(wire)
+            res = dns.message.from_wire(wire)
+        except QueryError as error:
+            info = f"WARN: TCP query error for {self.ipaddr}: {error}"
             if not self.caller.config.json:
                 print(info)
             self.info.append(info)
@@ -205,20 +230,26 @@ class Answer:
         return res
 
     def send_query_udp(self, msg):
-        """send DNS query over UDP to given IP address"""
+        """send wire format DNS query over UDP"""
 
         gotresponse = False
         res = None
         timeout = self.caller.config.timeout
         retries = self.caller.config.retries
+        ipaddress = self.ipaddr
+
+        sock = socket.socket(self.family, socket.SOCK_DGRAM)
+        sock.settimeout(timeout)
 
         while (not gotresponse) and (retries > 0):
             retries -= 1
             try:
-                res = dns.query.udp(msg, self.ipaddr, timeout=timeout)
+                wire = send_request_udp(sock, msg, ipaddress, 53)
+                self.size = len(wire)
+                res = dns.message.from_wire(wire)
                 gotresponse = True
-            except dns.exception.Timeout:
-                info = f"WARN: UDP query timeout for {self.ipaddr}"
+            except QueryError as error:
+                info = f"WARN: UDP query error {error}"
                 if not self.caller.config.json:
                     print(info)
                 self.info.append(info)
@@ -228,10 +259,12 @@ class Answer:
         """Send DNS query"""
 
         msg = self.make_query_message()
+        wire_msg = msg.to_wire()
+
         if self.caller.config.tcponly:
-            return self.send_query_tcp(msg)
+            return self.send_query_tcp(wire_msg)
         self.set_query_start_time()
-        res = self.send_query_udp(msg)
+        res = self.send_query_udp(wire_msg)
         if res and (res.flags & dns.flags.TC):
             info = "WARN: UDP response was truncated"
             if not self.caller.config.json:
@@ -239,7 +272,7 @@ class Answer:
             self.info.append(info)
             if not self.caller.config.notcpfallback:
                 self.tcp_fallback = True
-                return self.send_query_tcp(msg)
+                return self.send_query_tcp(wire_msg)
             return None
         self.compute_rtt()
         return res
@@ -339,6 +372,85 @@ class AllAnswers:
                 for rdata in rrset:
                     iplist.append(rdata.address)
         return iplist
+
+
+def send_request_udp(sock, pkt, host, port):
+    """Send single request with UDP"""
+
+    response, responder = b"", ("", 0)
+    try:
+        sock.sendto(pkt, (host, port))
+        while True:
+            response, responder = sock.recvfrom(65535)
+            if responder[0:2] == (host, port):
+                break
+    except socket.timeout as socket_timeout:
+        raise QueryError("UDP request timed out") from socket_timeout
+    sock.close()
+    return response
+
+
+def send_request_tcp(pkt, host, port, family, timeout):
+    """Send the request packet via TCP, using select"""
+
+    pkt = struct.pack("!H", len(pkt)) + pkt       # prepend 2-byte length
+    sock = socket.socket(family, socket.SOCK_STREAM)
+    sock.settimeout(timeout)
+    #sock.setblocking(0)
+    response = b""
+
+    try:
+        sock.connect((host, port))
+        if not send_socket(sock, pkt):
+            raise QueryError("send() on socket failed.")
+    except socket.error as socket_error:
+        sock.close()
+        raise QueryError("tcp socket send error: %s" % socket_error) from socket_error
+
+    while True:
+        try:
+            ready_r, _, _ = select.select([sock], [], [])
+        except select.error as select_error:
+            raise QueryError("fatal error from select(): %s" % select_error) from select_error
+        if ready_r and (sock in ready_r):
+            lbytes = recv_socket(sock, 2)
+            if len(lbytes) != 2:
+                raise QueryError("recv() on socket failed.")
+            resp_len, = struct.unpack('!H', lbytes)
+            response = recv_socket(sock, resp_len)
+            break
+
+    sock.close()
+    return response
+
+
+def send_socket(sock, message):
+    """Send message on a connected socket"""
+    try:
+        octets_sent = 0
+        while octets_sent < len(message):
+            sentn = sock.send(message[octets_sent:])
+            if sentn == 0:
+                raise QueryError("send() returned 0 bytes")
+            octets_sent += sentn
+    except Exception as catchall_error:
+        raise QueryError("sendSocket error: %s" % catchall_error) from catchall_error
+    else:
+        return True
+
+
+def recv_socket(sock, num_octets):
+    """Read and return num_octets of data from a connected socket"""
+    response = b""
+    octets_read = 0
+    while octets_read < num_octets:
+        chunk = sock.recv(num_octets-octets_read)
+        chunklen = len(chunk)
+        if chunklen == 0:
+            return b""
+        octets_read += chunklen
+        response += chunk
+    return response
 
 
 def main(config):
