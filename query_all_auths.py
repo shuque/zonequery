@@ -234,22 +234,21 @@ class Answer:
     def send_query_udp(self, msg):
         """send wire format DNS query over UDP"""
 
-        gotresponse = False
         res = None
         timeout = self.caller.config.timeout
-        retries = self.caller.config.retries
+        attempts_left = self.caller.config.retries + 1
         ipaddress = self.ipaddr
 
         sock = socket.socket(self.family, socket.SOCK_DGRAM)
         sock.settimeout(timeout)
 
-        while (not gotresponse) and (retries > 0):
-            retries -= 1
+        while attempts_left > 0:
+            attempts_left -= 1
             try:
                 wire = send_request_udp(sock, msg, ipaddress, 53)
                 self.size = len(wire)
                 res = dns.message.from_wire(wire)
-                gotresponse = True
+                break
             except QueryError as error:
                 info = f"WARN: UDP query error {error}"
                 if not self.caller.config.json:
