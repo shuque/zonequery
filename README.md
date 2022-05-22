@@ -27,11 +27,11 @@ Author: Shumon Huque
 ```
 $ query_all_auths.py -h
 usage: query_all_auths.py [-h] [-v] [-4 | -6] [--bufsize N] [--noedns]
-                          [--dnssec] [-j] [--timeout N] [--retries N]
+                          [--nsid] [--dnssec] [-j] [--timeout N] [--retries N]
                           [--notcpfallback] [--tcp] [--section name]
                           zone qname qtype
 
-Version 0.2.1
+Version 0.2.2
 Query all nameserver addresses for a given zone, qname, and qtype.
 
 positional arguments:
@@ -46,6 +46,7 @@ optional arguments:
   -6               Use IPv6 transport only
   --bufsize N      Set EDNS buffer size in octets (default: 1420)
   --noedns         Don't use EDNS
+  --nsid           Send NSID EDNS option
   --dnssec         Set DNSSEC-OK bit in queries
   -j               Emit JSON output (default is text)
   --timeout N      Query timeout in secs (default: 3)

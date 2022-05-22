@@ -79,6 +79,8 @@ def process_arguments(arguments=None):
                       action='store_const', const=0,
                       help="Don't use EDNS")
 
+    parser.add_argument("--nsid", dest='nsid', action='store_true',
+                        help="Send NSID EDNS option")
     parser.add_argument("--dnssec", dest='dnssec', action='store_true',
                         help="Set DNSSEC-OK bit in queries")
 
@@ -284,10 +286,13 @@ class Answer:
         msg.flags &= ~dns.flags.RD
         if self.caller.config.bufsize != 0:
             flags = dns.flags.DO if self.caller.config.dnssec else 0
+            options_list = []
+            if self.caller.config.nsid:
+                options_list.append(dns.edns.GenericOption(dns.edns.NSID, b''))
             msg.use_edns(edns=0,
                          payload=self.caller.config.bufsize,
                          ednsflags=flags,
-                         options=[dns.edns.GenericOption(dns.edns.NSID, b'')])
+                         options=options_list)
         return msg
 
 
