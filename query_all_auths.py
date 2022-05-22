@@ -316,7 +316,7 @@ class AllAnswers:
             "qname": self.config.qname,
             "qtype": self.config.qtype
         }
-        result['nslist'] = []
+        result['nslist'] = {}
         result['responses'] = []
         return result
 
@@ -331,7 +331,9 @@ class AllAnswers:
     def get_all_answers(self):
         """Get answers from all authority servers"""
         for nsname in self.nslist:
-            for ipaddr in self.get_iplist(nsname):
+            iplist = self.get_iplist(nsname)
+            self.result['nslist'][nsname.to_text()] = iplist
+            for ipaddr in iplist:
                 answer = Answer(self, nsname, ipaddr)
                 self.answer_list.append(answer)
 
@@ -353,7 +355,7 @@ class AllAnswers:
             for rdata in rrset:
                 nslist.add(rdata.target)
         for nsname in nslist:
-            self.result['nslist'].append(nsname.to_text())
+            self.result['nslist'][nsname.to_text()] = []
         return nslist
 
     def get_iplist(self, nsname):
