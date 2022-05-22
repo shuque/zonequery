@@ -27,8 +27,9 @@ Author: Shumon Huque
 ```
 $ query_all_auths.py -h
 usage: query_all_auths.py [-h] [-v] [-4 | -6] [--bufsize N] [--noedns]
-                          [--nsid] [--dnssec] [-j] [--timeout N] [--retries N]
-                          [--notcpfallback] [--tcp] [--section name]
+                          [--nsid] [--subnet SUBNET] [--dnssec] [-j]
+                          [--timeout N] [--retries N] [--notcpfallback]
+                          [--tcp] [--section name]
                           zone qname qtype
 
 Version 0.2.2
@@ -47,6 +48,7 @@ optional arguments:
   --bufsize N      Set EDNS buffer size in octets (default: 1420)
   --noedns         Don't use EDNS
   --nsid           Send NSID EDNS option
+  --subnet SUBNET  EDNS Client Subnet (e.g. 1.2.3.4/24)
   --dnssec         Set DNSSEC-OK bit in queries
   -j               Emit JSON output (default is text)
   --timeout N      Query timeout in secs (default: 3)

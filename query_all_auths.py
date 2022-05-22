@@ -81,6 +81,8 @@ def process_arguments(arguments=None):
 
     parser.add_argument("--nsid", dest='nsid', action='store_true',
                         help="Send NSID EDNS option")
+    parser.add_argument("--subnet", dest='subnet',
+                        help="EDNS Client Subnet (e.g. 1.2.3.4/24)")
     parser.add_argument("--dnssec", dest='dnssec', action='store_true',
                         help="Set DNSSEC-OK bit in queries")
 
@@ -122,6 +124,7 @@ class Answer:
         self.msg = None
         self.short_answers = SortedList()
         self.nsid = None
+        self.subnet = None
         self.size = 0
         self.tcp_fallback = False             # did TCP fallback happen?
         self.info = []
@@ -161,6 +164,11 @@ class Answer:
             for option in self.msg.options:
                 if option.otype == dns.edns.NSID:
                     self.nsid = option.data.decode()
+                elif option.otype == dns.edns.ECS:
+                    ecs_text = option.to_text()
+                    if ecs_text.startswith('ECS '):
+                        ecs_text = ecs_text[4:]
+                    self.subnet = ecs_text
 
         for rrset in self.msg.answer:
             for rdata in rrset:
@@ -199,6 +207,8 @@ class Answer:
             answer_dict['size'] = self.size
         if self.nsid:
             answer_dict['nsid'] = self.nsid
+        if self.subnet:
+            answer_dict['subnet'] = self.subnet
         answer_dict['rtt'] = self.rtt
         answer_dict['rcode'] = dns.rcode.to_text(self.rcode)
         answer_dict['response'] = self.get_sections()
@@ -288,6 +298,8 @@ class Answer:
             options_list = []
             if self.caller.config.nsid:
                 options_list.append(dns.edns.GenericOption(dns.edns.NSID, b''))
+            if self.caller.config.subnet:
+                options_list.append(dns.edns.ECSOption.from_text(self.caller.config.subnet))
             msg.use_edns(edns=0,
                          payload=self.caller.config.bufsize,
                          ednsflags=flags,
