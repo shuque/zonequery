@@ -484,10 +484,24 @@ def lambda_handler(event, context):
     print("Received event: " + json.dumps(event, indent=2))
     _ = context
     arglist = ["-4"]               # Lambda still doesn't support IPv6, sigh.
-    if "edns" not in event:
+    if "tcp" in event:
+        arglist.append('--tcp')
+    if "notcpfallback" in event:
+        arglist.append('--notcpfallback')
+    if "noedns" in event:
         arglist.append('--noedns')
+    if 'bufsize' in event:
+        arglist.extend(['--bufsize', event['bufsize']])
     if "dnssec" in event:
         arglist.append('--dnssec')
+    if "nsid" in event:
+        arglist.append('--nsid')
+    if 'subnet' in event:
+        arglist.extend(['--subnet', event['subnet']])
+    if 'timeout' in event:
+        arglist.extend(['--timeout', event['timeout']])
+    if 'retries' in event:
+        arglist.extend(['--retries', event['retries']])
     arglist.append(event['zone'])
     arglist.append(event['qname'])
     arglist.append(event['qtype'])
