@@ -60,39 +60,50 @@ optional arguments:
 
 ## Example output
 
-We use 'jq .' to pretty print the output.
-
 ```
-$ query_all_auths.py -j google.com www.google.com A | jq .
+$ query_all_auths.py -j google.com www.google.com A
 
 {
-  "timestamp": 1620642897.7138674,
+  "timestamp": 1653262479.4152172,
   "query": {
     "zone": "google.com",
     "qname": "www.google.com",
     "qtype": "A"
   },
-  "nslist": [
-    "ns1.google.com.",
-    "ns2.google.com.",
-    "ns3.google.com.",
-    "ns4.google.com."
-  ],
+  "nslist": {
+    "ns1.google.com.": [
+      "2001:4860:4802:32::a",
+      "216.239.32.10"
+    ],
+    "ns2.google.com.": [
+      "2001:4860:4802:34::a",
+      "216.239.34.10"
+    ],
+    "ns3.google.com.": [
+      "2001:4860:4802:36::a",
+      "216.239.36.10"
+    ],
+    "ns4.google.com.": [
+      "2001:4860:4802:38::a",
+      "216.239.38.10"
+    ]
+  },
   "responses": [
     {
       "name": "ns1.google.com.",
       "ip": "2001:4860:4802:32::a",
-      "rtt": 8.384,
+      "size": 59,
+      "rtt": 8.157,
       "rcode": "NOERROR",
       "response": {
-        "short_answers": "172.217.12.132",
+        "short_answers": "142.250.65.164",
         "answer": [
           {
             "rrname": "www.google.com.",
             "rrtype": "A",
             "ttl": 300,
             "rdata": [
-              "172.217.12.132"
+              "142.250.65.164"
             ]
           }
         ]
@@ -101,17 +112,18 @@ $ query_all_auths.py -j google.com www.google.com A | jq .
     {
       "name": "ns1.google.com.",
       "ip": "216.239.32.10",
-      "rtt": 7.764,
+      "size": 59,
+      "rtt": 8.351,
       "rcode": "NOERROR",
       "response": {
-        "short_answers": "172.217.12.164",
+        "short_answers": "142.251.40.228",
         "answer": [
           {
             "rrname": "www.google.com.",
             "rrtype": "A",
             "ttl": 300,
             "rdata": [
-              "172.217.12.164"
+              "142.251.40.228"
             ]
           }
         ]
@@ -120,17 +132,18 @@ $ query_all_auths.py -j google.com www.google.com A | jq .
     {
       "name": "ns2.google.com.",
       "ip": "2001:4860:4802:34::a",
-      "rtt": 14.983,
+      "size": 59,
+      "rtt": 16.612,
       "rcode": "NOERROR",
       "response": {
-        "short_answers": "172.217.12.132",
+        "short_answers": "142.250.65.164",
         "answer": [
           {
             "rrname": "www.google.com.",
             "rrtype": "A",
             "ttl": 300,
             "rdata": [
-              "172.217.12.132"
+              "142.250.65.164"
             ]
           }
         ]
@@ -139,17 +152,18 @@ $ query_all_auths.py -j google.com www.google.com A | jq .
     {
       "name": "ns2.google.com.",
       "ip": "216.239.34.10",
-      "rtt": 14.76,
+      "size": 59,
+      "rtt": 15.092,
       "rcode": "NOERROR",
       "response": {
-        "short_answers": "172.217.12.164",
+        "short_answers": "142.251.40.228",
         "answer": [
           {
             "rrname": "www.google.com.",
             "rrtype": "A",
             "ttl": 300,
             "rdata": [
-              "172.217.12.164"
+              "142.251.40.228"
             ]
           }
         ]
@@ -158,17 +172,18 @@ $ query_all_auths.py -j google.com www.google.com A | jq .
     {
       "name": "ns3.google.com.",
       "ip": "2001:4860:4802:36::a",
-      "rtt": 15.208,
+      "size": 59,
+      "rtt": 16.075,
       "rcode": "NOERROR",
       "response": {
-        "short_answers": "172.217.12.132",
+        "short_answers": "142.250.65.164",
         "answer": [
           {
             "rrname": "www.google.com.",
             "rrtype": "A",
             "ttl": 300,
             "rdata": [
-              "172.217.12.132"
+              "142.250.65.164"
             ]
           }
         ]
@@ -177,17 +192,18 @@ $ query_all_auths.py -j google.com www.google.com A | jq .
     {
       "name": "ns3.google.com.",
       "ip": "216.239.36.10",
-      "rtt": 15.287,
+      "size": 59,
+      "rtt": 15.405,
       "rcode": "NOERROR",
       "response": {
-        "short_answers": "172.217.12.164",
+        "short_answers": "142.251.40.228",
         "answer": [
           {
             "rrname": "www.google.com.",
             "rrtype": "A",
             "ttl": 300,
             "rdata": [
-              "172.217.12.164"
+              "142.251.40.228"
             ]
           }
         ]
@@ -196,17 +212,18 @@ $ query_all_auths.py -j google.com www.google.com A | jq .
     {
       "name": "ns4.google.com.",
       "ip": "2001:4860:4802:38::a",
-      "rtt": 19.955,
+      "size": 59,
+      "rtt": 8.145,
       "rcode": "NOERROR",
       "response": {
-        "short_answers": "172.217.12.132",
+        "short_answers": "142.250.65.164",
         "answer": [
           {
             "rrname": "www.google.com.",
             "rrtype": "A",
             "ttl": 300,
             "rdata": [
-              "172.217.12.132"
+              "142.250.65.164"
             ]
           }
         ]
@@ -215,17 +232,18 @@ $ query_all_auths.py -j google.com www.google.com A | jq .
     {
       "name": "ns4.google.com.",
       "ip": "216.239.38.10",
-      "rtt": 19.02,
+      "size": 59,
+      "rtt": 9.046,
       "rcode": "NOERROR",
       "response": {
-        "short_answers": "172.217.12.164",
+        "short_answers": "142.251.40.228",
         "answer": [
           {
             "rrname": "www.google.com.",
             "rrtype": "A",
             "ttl": 300,
             "rdata": [
-              "172.217.12.164"
+              "142.251.40.228"
             ]
           }
         ]
@@ -233,6 +251,7 @@ $ query_all_auths.py -j google.com www.google.com A | jq .
     }
   ]
 }
+
 ```
 
 Are all the salesforce.com/A answer sets the same?

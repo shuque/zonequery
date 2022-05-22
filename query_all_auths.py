@@ -514,7 +514,7 @@ if __name__ == '__main__':
     CONFIG = process_arguments()
     RESULT = main(CONFIG)
     if CONFIG.json:
-        print(json.dumps(RESULT))
+        print(json.dumps(RESULT, indent=2))
     else:
         for ADICT in RESULT['responses']:
             if 'error' in ADICT:
