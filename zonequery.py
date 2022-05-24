@@ -23,7 +23,7 @@ import dns.message
 from sortedcontainers import SortedList
 
 
-__version__ = "0.2.2"
+__version__ = "0.3.0"
 __description__ = f"""\
 Version {__version__}
 Query all nameserver addresses for a given zone, qname, and qtype."""
@@ -86,8 +86,8 @@ def process_arguments(arguments=None):
     parser.add_argument("--dnssec", dest='dnssec', action='store_true',
                         help="Set DNSSEC-OK bit in queries")
 
-    parser.add_argument("-j", dest='json', action='store_true',
-                        help="Emit JSON output (default is text)")
+    parser.add_argument("--text", dest='text', action='store_true',
+                        help="Emit abbreviated text output (default is json)")
     edns.add_argument("--timeout", type=int, metavar='N',
                       default=DEFAULT_TIMEOUT,
                       help="Query timeout in secs (default: %(default)d)")
@@ -126,6 +126,7 @@ class Answer:
         self.nsid = None
         self.subnet = None
         self.size = 0
+        self.udp_truncated = False
         self.tcp_fallback = False             # did TCP fallback happen?
         self.info = []
         self.error = []
@@ -179,7 +180,6 @@ class Answer:
         """Get response section information"""
         requested = self.caller.config.section
         response_dict = {}
-        response_dict['short_answers'] = ",".join(self.short_answers)
         if self.msg.answer and requested in [None, 'answer']:
             answer_list = Answer.section_to_list(self.msg.answer)
             response_dict['answer'] = answer_list
@@ -200,9 +200,12 @@ class Answer:
             answer_dict['info'] = ";".join(self.info)
         if self.error:
             answer_dict['error'] = ";".join(self.error)
-            return answer_dict
+        if self.udp_truncated:
+            answer_dict['udp_truncated'] = True
         if self.tcp_fallback:
             answer_dict['tcp_fallback'] = True
+        if self.error:
+            return answer_dict
         if self.size:
             answer_dict['size'] = self.size
         if self.nsid:
@@ -211,7 +214,10 @@ class Answer:
             answer_dict['subnet'] = self.subnet
         answer_dict['rtt'] = self.rtt
         answer_dict['rcode'] = dns.rcode.to_text(self.rcode)
-        answer_dict['response'] = self.get_sections()
+        answer_dict['flags'] = dns.flags.to_text(self.msg.flags)
+        answer_dict['id'] = self.msg.id
+        answer_dict['short_answers'] = ",".join(self.short_answers)
+        answer_dict['sections'] = self.get_sections()
         return answer_dict
 
     def set_query_start_time(self):
@@ -230,12 +236,12 @@ class Answer:
 
         self.set_query_start_time()
         try:
-            wire = send_request_tcp(msg, self.ipaddr, 53, self.family, timeout)
+            wire = _send_tcp(msg, self.ipaddr, 53, self.family, timeout)
             self.size = len(wire)
             res = dns.message.from_wire(wire)
         except QueryError as error:
             info = f"WARN: TCP query error for {self.ipaddr}: {error}"
-            if not self.caller.config.json:
+            if self.caller.config.text:
                 print(info)
             self.info.append(info)
         self.compute_rtt()
@@ -255,13 +261,13 @@ class Answer:
         while attempts_left > 0:
             attempts_left -= 1
             try:
-                wire = send_request_udp(sock, msg, ipaddress, 53)
+                wire = _send_udp(sock, msg, ipaddress, 53)
                 self.size = len(wire)
                 res = dns.message.from_wire(wire)
                 break
             except QueryError as error:
                 info = f"WARN: UDP query error {error}"
-                if not self.caller.config.json:
+                if self.caller.config.text:
                     print(info)
                 self.info.append(info)
         return res
@@ -277,8 +283,9 @@ class Answer:
         self.set_query_start_time()
         res = self.send_query_udp(wire_msg)
         if res and (res.flags & dns.flags.TC):
+            self.udp_truncated = True
             info = "WARN: UDP response was truncated"
-            if not self.caller.config.json:
+            if self.caller.config.text:
                 print(info)
             self.info.append(info)
             if not self.caller.config.notcpfallback:
@@ -326,8 +333,10 @@ class AllAnswers:
         result['query'] = {
             "zone": self.config.zone,
             "qname": self.config.qname,
-            "qtype": self.config.qtype
+            "qtype": self.config.qtype,
         }
+        if self.config.bufsize != 0:
+            result['query']['edns_buf_size'] = self.config.bufsize
         result['nslist'] = {}
         result['responses'] = []
         return result
@@ -358,7 +367,7 @@ class AllAnswers:
         except dns.exception.DNSException as excinfo:
             errmsg = f"Couldn't query NS list for {self.config.zone}: {excinfo}"
             self.info.append(errmsg)
-            if not self.config.json:
+            if self.config.text:
                 print(errmsg)
             return nslist
         for rrset in msg.answer:
@@ -381,7 +390,7 @@ class AllAnswers:
             except dns.exception.DNSException as excinfo:
                 errmsg = f"Couldn't resolve NS address for {nsname} {rrtype}: {excinfo}"
                 self.info.append(errmsg)
-                if not self.config.json:
+                if self.config.text:
                     print(errmsg)
                 continue
             for rrset in msg.answer:
@@ -392,7 +401,7 @@ class AllAnswers:
         return iplist
 
 
-def send_request_udp(sock, pkt, host, port):
+def _send_udp(sock, pkt, host, port):
     """Send single request with UDP"""
 
     response, responder = b"", ("", 0)
@@ -408,7 +417,7 @@ def send_request_udp(sock, pkt, host, port):
     return response
 
 
-def send_request_tcp(pkt, host, port, family, timeout):
+def _send_tcp(pkt, host, port, family, timeout):
     """Send the request packet via TCP, using select"""
 
     pkt = struct.pack("!H", len(pkt)) + pkt       # prepend 2-byte length
@@ -419,7 +428,7 @@ def send_request_tcp(pkt, host, port, family, timeout):
 
     try:
         sock.connect((host, port))
-        if not send_socket(sock, pkt):
+        if not _send_socket(sock, pkt):
             raise QueryError("send() on socket failed.")
     except socket.error as socket_error:
         sock.close()
@@ -431,18 +440,18 @@ def send_request_tcp(pkt, host, port, family, timeout):
         except select.error as select_error:
             raise QueryError("fatal error from select(): %s" % select_error) from select_error
         if ready_r and (sock in ready_r):
-            lbytes = recv_socket(sock, 2)
+            lbytes = _recv_socket(sock, 2)
             if len(lbytes) != 2:
                 raise QueryError("recv() on socket failed.")
             resp_len, = struct.unpack('!H', lbytes)
-            response = recv_socket(sock, resp_len)
+            response = _recv_socket(sock, resp_len)
             break
 
     sock.close()
     return response
 
 
-def send_socket(sock, message):
+def _send_socket(sock, message):
     """Send message on a connected socket"""
     try:
         octets_sent = 0
@@ -457,7 +466,7 @@ def send_socket(sock, message):
         return True
 
 
-def recv_socket(sock, num_octets):
+def _recv_socket(sock, num_octets):
     """Read and return num_octets of data from a connected socket"""
     response = b""
     octets_read = 0
@@ -469,6 +478,24 @@ def recv_socket(sock, num_octets):
         octets_read += chunklen
         response += chunk
     return response
+
+
+def text_output(result):
+    """Output results in abbreviated text format"""
+
+    for adict in result['responses']:
+        if 'error' in adict:
+            info = adict['info'] if 'info' in adict else ''
+            print("ERROR: {} {} {} {}".format(adict['error'],
+                                              info,
+                                              adict['name'],
+                                              adict['ip']))
+        else:
+            nsid = adict['nsid'] if 'nsid' in adict else ''
+            print("{} {} {} {}".format(adict['short_answers'],
+                                       adict['name'],
+                                       adict['ip'],
+                                       nsid))
 
 
 def main(config):
@@ -513,19 +540,7 @@ if __name__ == '__main__':
 
     CONFIG = process_arguments()
     RESULT = main(CONFIG)
-    if CONFIG.json:
+    if not CONFIG.text:
         print(json.dumps(RESULT, indent=2))
     else:
-        for ADICT in RESULT['responses']:
-            if 'error' in ADICT:
-                INFO = ADICT['info'] if 'info' in ADICT else ''
-                print("ERROR: {} {} {} {}".format(ADICT['error'],
-                                                  INFO,
-                                                  ADICT['name'],
-                                                  ADICT['ip']))
-            else:
-                NSID = ADICT['nsid'] if 'nsid' in ADICT else ''
-                print("{} {} {} {}".format(ADICT['response']['short_answers'],
-                                           ADICT['name'],
-                                           ADICT['ip'],
-                                           NSID))
+        text_output(RESULT)

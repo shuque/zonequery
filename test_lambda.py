@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 #
 
-from query_all_auths import lambda_handler
+from zonequery import lambda_handler
 
 event = {
     'zone': 'huque.com',

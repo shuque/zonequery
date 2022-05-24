@@ -1,13 +1,10 @@
-# query_all_auths
-Query all DNS authoritative servers
+# zonequery
+Query all DNS authoritative servers at a zone
 
 Script to query all the authoritative servers for a zone, for a given
-query name and type. The default output, in text format, provides an
-abbreviated form of the data in the answer section of the DNS responses.
-With the "-j" option, more complete output is provided in JSON format.
-In either case, the list of RDATA per RRset is presented in sorted
-order, to make it easier to compare the answers from each server with
-simple scripts.
+query name and type. The default output is a detailed machine parseable
+JSON string. The --text option can be used to produce an abbreviated
+text based output.
 
 This program can also be invoked as an AWS lambda function via the
 lambda_handler() function.
@@ -25,14 +22,13 @@ Author: Shumon Huque
 ## Usage
 
 ```
-$ query_all_auths.py -h
-usage: query_all_auths.py [-h] [-v] [-4 | -6] [--bufsize N] [--noedns]
-                          [--nsid] [--subnet SUBNET] [--dnssec] [-j]
-                          [--timeout N] [--retries N] [--notcpfallback]
-                          [--tcp] [--section name]
-                          zone qname qtype
+$ zonequery.py -h
+usage: zonequery.py [-h] [-v] [-4 | -6] [--bufsize N] [--noedns] [--nsid]
+                    [--subnet SUBNET] [--dnssec] [--text] [--timeout N]
+                    [--retries N] [--notcpfallback] [--tcp] [--section name]
+                    zone qname qtype
 
-Version 0.2.2
+Version 0.3.0
 Query all nameserver addresses for a given zone, qname, and qtype.
 
 positional arguments:
@@ -50,7 +46,7 @@ optional arguments:
   --nsid           Send NSID EDNS option
   --subnet SUBNET  EDNS Client Subnet (e.g. 1.2.3.4/24)
   --dnssec         Set DNSSEC-OK bit in queries
-  -j               Emit JSON output (default is text)
+  --text           Emit abbreviated text output (default is json)
   --timeout N      Query timeout in secs (default: 3)
   --retries N      Number of UDP retries (default: 2)
   --notcpfallback  Do not fall back to TCP on truncation
@@ -61,14 +57,15 @@ optional arguments:
 ## Example output
 
 ```
-$ query_all_auths.py -j google.com www.google.com A
+$ zonequery.py google.com www.google.com A
 
 {
-  "timestamp": 1653262479.4152172,
+  "timestamp": 1653357383.3894224,
   "query": {
     "zone": "google.com",
     "qname": "www.google.com",
-    "qtype": "A"
+    "qtype": "A",
+    "edns_buf_size": 1420
   },
   "nslist": {
     "ns1.google.com.": [
@@ -93,10 +90,12 @@ $ query_all_auths.py -j google.com www.google.com A
       "name": "ns1.google.com.",
       "ip": "2001:4860:4802:32::a",
       "size": 59,
-      "rtt": 8.157,
+      "rtt": 8.591,
       "rcode": "NOERROR",
-      "response": {
-        "short_answers": "142.250.65.164",
+      "flags": "QR AA",
+      "id": 4625,
+      "short_answers": "142.250.65.164",
+      "sections": {
         "answer": [
           {
             "rrname": "www.google.com.",
@@ -113,10 +112,12 @@ $ query_all_auths.py -j google.com www.google.com A
       "name": "ns1.google.com.",
       "ip": "216.239.32.10",
       "size": 59,
-      "rtt": 8.351,
+      "rtt": 8.449,
       "rcode": "NOERROR",
-      "response": {
-        "short_answers": "142.251.40.228",
+      "flags": "QR AA",
+      "id": 40003,
+      "short_answers": "142.251.40.228",
+      "sections": {
         "answer": [
           {
             "rrname": "www.google.com.",
@@ -133,10 +134,12 @@ $ query_all_auths.py -j google.com www.google.com A
       "name": "ns2.google.com.",
       "ip": "2001:4860:4802:34::a",
       "size": 59,
-      "rtt": 16.612,
+      "rtt": 15.182,
       "rcode": "NOERROR",
-      "response": {
-        "short_answers": "142.250.65.164",
+      "flags": "QR AA",
+      "id": 32438,
+      "short_answers": "142.250.65.164",
+      "sections": {
         "answer": [
           {
             "rrname": "www.google.com.",
@@ -153,10 +156,12 @@ $ query_all_auths.py -j google.com www.google.com A
       "name": "ns2.google.com.",
       "ip": "216.239.34.10",
       "size": 59,
-      "rtt": 15.092,
+      "rtt": 15.129,
       "rcode": "NOERROR",
-      "response": {
-        "short_answers": "142.251.40.228",
+      "flags": "QR AA",
+      "id": 7611,
+      "short_answers": "142.251.40.228",
+      "sections": {
         "answer": [
           {
             "rrname": "www.google.com.",
@@ -173,10 +178,12 @@ $ query_all_auths.py -j google.com www.google.com A
       "name": "ns3.google.com.",
       "ip": "2001:4860:4802:36::a",
       "size": 59,
-      "rtt": 16.075,
+      "rtt": 14.638,
       "rcode": "NOERROR",
-      "response": {
-        "short_answers": "142.250.65.164",
+      "flags": "QR AA",
+      "id": 57517,
+      "short_answers": "142.250.65.164",
+      "sections": {
         "answer": [
           {
             "rrname": "www.google.com.",
@@ -193,10 +200,12 @@ $ query_all_auths.py -j google.com www.google.com A
       "name": "ns3.google.com.",
       "ip": "216.239.36.10",
       "size": 59,
-      "rtt": 15.405,
+      "rtt": 15.393,
       "rcode": "NOERROR",
-      "response": {
-        "short_answers": "142.251.40.228",
+      "flags": "QR AA",
+      "id": 24607,
+      "short_answers": "142.251.40.228",
+      "sections": {
         "answer": [
           {
             "rrname": "www.google.com.",
@@ -213,10 +222,12 @@ $ query_all_auths.py -j google.com www.google.com A
       "name": "ns4.google.com.",
       "ip": "2001:4860:4802:38::a",
       "size": 59,
-      "rtt": 8.145,
+      "rtt": 8.974,
       "rcode": "NOERROR",
-      "response": {
-        "short_answers": "142.250.65.164",
+      "flags": "QR AA",
+      "id": 44152,
+      "short_answers": "142.250.65.164",
+      "sections": {
         "answer": [
           {
             "rrname": "www.google.com.",
@@ -233,10 +244,12 @@ $ query_all_auths.py -j google.com www.google.com A
       "name": "ns4.google.com.",
       "ip": "216.239.38.10",
       "size": 59,
-      "rtt": 9.046,
+      "rtt": 8.613,
       "rcode": "NOERROR",
-      "response": {
-        "short_answers": "142.251.40.228",
+      "flags": "QR AA",
+      "id": 34167,
+      "short_answers": "142.251.40.228",
+      "sections": {
         "answer": [
           {
             "rrname": "www.google.com.",
@@ -251,13 +264,12 @@ $ query_all_auths.py -j google.com www.google.com A
     }
   ]
 }
-
 ```
 
 Are all the salesforce.com/A answer sets the same?
 
 ```
-$ query_all_auths.py -j salesforce.com salesforce.com A | jq -r '.responses[].response.short_answers'
+$ zonequery.py salesforce.com salesforce.com A | jq -r '.responses[].short_answers'
 104.109.10.129,104.109.11.129,184.25.179.132,184.31.10.133,184.31.3.130,23.1.106.133,23.1.35.132,23.1.99.130
 104.109.10.129,104.109.11.129,184.25.179.132,184.31.10.133,184.31.3.130,23.1.106.133,23.1.35.132,23.1.99.130
 104.109.10.129,104.109.11.129,184.25.179.132,184.31.10.133,184.31.3.130,23.1.106.133,23.1.35.132,23.1.99.130
@@ -271,7 +283,7 @@ $ query_all_auths.py -j salesforce.com salesforce.com A | jq -r '.responses[].re
 104.109.10.129,104.109.11.129,184.25.179.132,184.31.10.133,184.31.3.130,23.1.106.133,23.1.35.132,23.1.99.130
 104.109.10.129,104.109.11.129,184.25.179.132,184.31.10.133,184.31.3.130,23.1.106.133,23.1.35.132,23.1.99.130
 
-$ query_all_auths.py -j salesforce.com salesforce.com A | jq -r '.responses[].response.short_answers' | sort -u | wc -l
+$ zonequery.py salesforce.com salesforce.com A | jq -r '.responses[].short_answers' | sort -u | wc -l
 1
 
 YES.
