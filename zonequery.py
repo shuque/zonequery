@@ -23,7 +23,7 @@ import dns.message
 from sortedcontainers import SortedList
 
 
-__version__ = "0.3.0"
+__version__ = "0.3.1"
 __description__ = f"""\
 Version {__version__}
 Query all nameserver addresses for a given zone, qname, and qtype."""
@@ -239,11 +239,8 @@ class Answer:
             wire = _send_tcp(msg, self.ipaddr, 53, self.family, timeout)
             self.size = len(wire)
             res = dns.message.from_wire(wire)
-        except QueryError as error:
-            info = f"WARN: TCP query error for {self.ipaddr}: {error}"
-            if self.caller.config.text:
-                print(info)
-            self.info.append(info)
+        except (QueryError, OSError) as error:
+            self.error.append(f"TCP query error for {self.ipaddr}: {error}")
         self.compute_rtt()
         return res
 
@@ -255,7 +252,12 @@ class Answer:
         attempts_left = self.caller.config.retries + 1
         ipaddress = self.ipaddr
 
-        sock = socket.socket(self.family, socket.SOCK_DGRAM)
+        try:
+            sock = socket.socket(self.family, socket.SOCK_DGRAM)
+        except OSError as error:
+            self.error.append(f"UDP query error for {self.ipaddr}: {error}")
+            return res
+
         sock.settimeout(timeout)
 
         while attempts_left > 0:
