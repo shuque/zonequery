@@ -23,7 +23,7 @@ import dns.message
 from sortedcontainers import SortedList
 
 
-__version__ = "0.3.1"
+__version__ = "0.3.2"
 __description__ = f"""\
 Version {__version__}
 Query all nameserver addresses for a given zone, qname, and qtype."""
@@ -164,7 +164,7 @@ class Answer:
         if self.caller.config.bufsize != 0:
             for option in self.msg.options:
                 if option.otype == dns.edns.NSID:
-                    self.nsid = option.data.decode()
+                    self.nsid = option.nsid.decode()
                 elif option.otype == dns.edns.ECS:
                     ecs_text = option.to_text()
                     if ecs_text.startswith('ECS '):
