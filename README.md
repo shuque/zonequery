@@ -28,7 +28,7 @@ usage: zonequery.py [-h] [-v] [-4 | -6] [--bufsize N] [--noedns] [--nsid]
                     [--retries N] [--notcpfallback] [--tcp] [--section name]
                     zone qname qtype
 
-Version 0.3.2
+Version 0.3.3
 Query all nameserver addresses for a given zone, qname, and qtype.
 
 positional arguments:
