@@ -183,22 +183,23 @@ class Answer:
         """Get response section information"""
         requested = self.caller.config.section
         response_dict = {}
-        if self.msg.answer and requested in [None, 'answer']:
+        if self.msg.answer and requested in {None, 'answer'}:
             answer_list = Answer.section_to_list(self.msg.answer)
             response_dict['answer'] = answer_list
-        if self.msg.authority and requested in [None, 'authority']:
+        if self.msg.authority and requested in {None, 'authority'}:
             authority_list = Answer.section_to_list(self.msg.authority)
             response_dict['authority'] = authority_list
-        if self.msg.additional and requested in [None, 'additional']:
+        if self.msg.additional and requested in {None, 'additional'}:
             additional_list = Answer.section_to_list(self.msg.additional)
             response_dict['additional'] = additional_list
         return response_dict
 
     def get_result(self):
         """Make result dictionary"""
-        answer_dict = {}
-        answer_dict['name'] = self.nsname.to_text()
-        answer_dict['ip'] = self.ipaddr
+        answer_dict = {
+            'name': self.nsname.to_text(),
+            'ip': self.ipaddr
+        }
         if self.info:
             answer_dict['info'] = ";".join(self.info)
         if self.error:
@@ -333,12 +334,13 @@ class AllAnswers:
 
     def init_result(self):
         """Initialize result dictionary"""
-        result = {}
-        result['timestamp'] = time.time()
-        result['query'] = {
-            "zone": self.config.zone,
-            "qname": self.config.qname,
-            "qtype": self.config.qtype,
+        result = {
+            'timestamp': time.time(),
+            'query': {
+                "zone": self.config.zone,
+                "qname": self.config.qname,
+                "qtype": self.config.qtype,
+            }
         }
         if self.config.bufsize != 0:
             result['query']['edns_buf_size'] = self.config.bufsize
@@ -437,13 +439,13 @@ def _send_tcp(pkt, host, port, family, timeout):
             raise QueryError("send() on socket failed.")
     except socket.error as socket_error:
         sock.close()
-        raise QueryError("tcp socket send error: %s" % socket_error) from socket_error
+        raise QueryError(f"tcp socket send error: {socket_error}") from socket_error
 
     while True:
         try:
             ready_r, _, _ = select.select([sock], [], [])
         except select.error as select_error:
-            raise QueryError("fatal error from select(): %s" % select_error) from select_error
+            raise QueryError(f"fatal error from select(): {select_error}") from select_error
         if ready_r and (sock in ready_r):
             lbytes = _recv_socket(sock, 2)
             if len(lbytes) != 2:
@@ -466,9 +468,8 @@ def _send_socket(sock, message):
                 raise QueryError("send() returned 0 bytes")
             octets_sent += sentn
     except Exception as catchall_error:
-        raise QueryError("sendSocket error: %s" % catchall_error) from catchall_error
-    else:
-        return True
+        raise QueryError(f"sendSocket error: {catchall_error}") from catchall_error
+    return True
 
 
 def _recv_socket(sock, num_octets):
@@ -491,16 +492,12 @@ def text_output(result):
     for adict in result['responses']:
         if 'error' in adict:
             info = adict['info'] if 'info' in adict else ''
-            print("ERROR: {} {} {} {}".format(adict['error'],
-                                              info,
-                                              adict['name'],
-                                              adict['ip']))
+            print(f"ERROR: {adict['error']} "
+                  f"{info} {adict['name']} {adict['ip']}")
         else:
             nsid = adict['nsid'] if 'nsid' in adict else ''
-            print("{} {} {} {}".format(adict['short_answers'],
-                                       adict['name'],
-                                       adict['ip'],
-                                       nsid))
+            print(f"{adict['short_answers']} "
+                  f"{adict['name']} {adict['ip']} {nsid}")
 
 
 def main(config):
