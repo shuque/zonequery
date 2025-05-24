@@ -18,6 +18,19 @@ Author: Shumon Huque
   * dnspython
   * sortedcontainers
 
+## Installation
+
+To install from a local copy of this repository:
+
+```
+pip3 install .
+```
+
+To install from the git repo directly:
+
+```
+pip3 install git+https://github.com/shuque/zonequery.git@v0.3.3
+```
 
 ## Usage
 
